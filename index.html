@@ -12,14 +12,33 @@
   </head>
   <body>
     <div id="root"></div>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.js" crossorigin="anonymous"></script>
     <script>
-      window.addEventListener('load', function() {
-        if (window.mpVision) {
-          window.FilesetResolver = window.mpVision.FilesetResolver;
-          window.PoseLandmarker = window.mpVision.PoseLandmarker;
-        }
-      });
+      // Załaduj MediaPipe i ustaw w window PRZED uruchomieniem React
+      (function() {
+        var script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.js';
+        script.crossOrigin = 'anonymous';
+        script.onload = function() {
+          // vision_bundle eksportuje przez window.mpVision LUB bezpośrednio
+          if (window.mpVision) {
+            window.FilesetResolver = window.mpVision.FilesetResolver;
+            window.PoseLandmarker = window.mpVision.PoseLandmarker;
+          } else if (window.FilesetResolver && window.PoseLandmarker) {
+            // już dostępne bezpośrednio
+          } else {
+            // sprawdź inne możliwe nazwy
+            var keys = Object.keys(window);
+            keys.forEach(function(k) {
+              if (window[k] && window[k].FilesetResolver) {
+                window.FilesetResolver = window[k].FilesetResolver;
+                window.PoseLandmarker = window[k].PoseLandmarker;
+              }
+            });
+          }
+          window._mediapipeReady = true;
+        };
+        document.head.appendChild(script);
+      })();
     </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
