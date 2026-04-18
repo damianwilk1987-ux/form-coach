@@ -1,14 +1,10 @@
-[build]
-  command = "npm run build"
-  publish = "dist"
-  functions = "netlify/functions"
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
 
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
-
-[dev]
-  command = "vite"
-  port = 3000
-  targetPort = 3000
+export default defineConfig({
+  plugins: [react()],
+  build: { outDir: "dist" },
+  optimizeDeps: {
+    exclude: ["@mediapipe/tasks-vision"],
+  },
+});
