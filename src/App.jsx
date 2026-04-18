@@ -2,11 +2,11 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { getAngles, getAngleStatus, POSE_CONNECTIONS } from "./poseAnalyzer";
 
 const EXERCISES = [
-  { id: "squat",  label: "Przysiad",     icon: "🏋️" },
-  { id: "pushup", label: "Pompki",       icon: "💪" },
-  { id: "lunge",  label: "Wykroki",      icon: "🦵" },
-  { id: "plank",  label: "Deska",        icon: "🧱" },
-  { id: "pullup", label: "Podciąganie",  icon: "🔝" },
+  { id: "squat",  label: "Przysiad",    icon: "🏋️" },
+  { id: "pushup", label: "Pompki",      icon: "💪" },
+  { id: "lunge",  label: "Wykroki",     icon: "🦵" },
+  { id: "plank",  label: "Deska",       icon: "🧱" },
+  { id: "pullup", label: "Podciąganie", icon: "🔝" },
 ];
 
 const ANALYSIS_INTERVAL = 4000;
@@ -34,43 +34,20 @@ export default function App() {
     async function loadMP() {
       setMpLoading(true);
       try {
-        // Czekaj aż MediaPipe będzie dostępne w window
         let attempts = 0;
-        while ((!window.FilesetResolver || !window.PoseLandmarker) && attempts < 50) {
-          await new Promise(r => setTimeout(r, 200));
-          attempts++;
+        while (attempts < 50) {
           if (window.mpVision) {
             window.FilesetResolver = window.mpVision.FilesetResolver;
             window.PoseLandmarker = window.mpVision.PoseLandmarker;
           }
+          if (window.FilesetResolver && window.PoseLandmarker) break;
+          await new Promise(r => setTimeout(r, 200));
+          attempts++;
         }
         if (!window.FilesetResolver || !window.PoseLandmarker) {
           throw new Error("MediaPipe nie załadował się w czasie.");
         }
         const vision = await window.FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
-        );
-        const detector = await window.PoseLandmarker.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
-            delegate: "GPU",
-          },
-          runningMode: "VIDEO",
-          numPoses: 1,
-          minPoseDetectionConfidence: 0.5,
-          minPosePresenceConfidence: 0.5,
-          minTrackingConfidence: 0.5,
-        });
-        if (!cancelled) { detectorRef.current = detector; setMpReady(true); }
-      } catch (e) {
-        if (!cancelled) setError("Błąd ładowania MediaPipe: " + e.message);
-      } finally {
-        if (!cancelled) setMpLoading(false);
-      }
-    }
-    loadMP();
-    return () => { cancelled = true; };
-  }, []);
           "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
         );
         const detector = await window.PoseLandmarker.createFromOptions(vision, {
@@ -379,3 +356,4 @@ export default function App() {
     </div>
   );
 }
+
