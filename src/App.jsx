@@ -139,7 +139,7 @@ export default function App() {
   const analyzeWithClaude = useCallback(async (imageBase64, anglesData) => {
     setLoading(true);
     try {
-      const res = await fetch("/.netlify/functions/analyze", {
+     const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ imageBase64, exercise, angles: anglesData }),
