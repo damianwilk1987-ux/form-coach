@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import { FilesetResolver, PoseLandmarker } from "@mediapipe/tasks-vision";
 import { getAngles, getAngleStatus, POSE_CONNECTIONS } from "./poseAnalyzer";
 
 const EXERCISES = [
@@ -44,10 +45,10 @@ export default function App() {
           await new Promise(r => setTimeout(r, 200));
           attempts++;
         }
-        if (!window.FilesetResolver || !window.PoseLandmarker) {
+        if (!window.FilesetResolver || PoseLandmarker) {
           throw new Error("MediaPipe nie załadował się w czasie.");
         }
-        const vision = await window.FilesetResolver.forVisionTasks(
+        const vision = await FilesetResolver.forVisionTasks(
           "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
         );
         const detector = await window.PoseLandmarker.createFromOptions(vision, {
