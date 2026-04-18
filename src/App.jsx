@@ -35,23 +35,10 @@ export default function App() {
     async function loadMP() {
       setMpLoading(true);
       try {
-        let attempts = 0;
-        while (attempts < 50) {
-          if (window.mpVision) {
-            window.FilesetResolver = window.mpVision.FilesetResolver;
-            window.PoseLandmarker = window.mpVision.PoseLandmarker;
-          }
-          if (window.FilesetResolver && window.PoseLandmarker) break;
-          await new Promise(r => setTimeout(r, 200));
-          attempts++;
-        }
-        if (!window.FilesetResolver || PoseLandmarker) {
-          throw new Error("MediaPipe nie załadował się w czasie.");
-        }
         const vision = await FilesetResolver.forVisionTasks(
           "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
         );
-        const detector = await window.PoseLandmarker.createFromOptions(vision, {
+        const detector = await PoseLandmarker.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
             delegate: "GPU",
@@ -140,7 +127,7 @@ export default function App() {
   const analyzeWithClaude = useCallback(async (imageBase64, anglesData) => {
     setLoading(true);
     try {
-     const res = await fetch("/api/analyze", {
+      const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ imageBase64, exercise, angles: anglesData }),
@@ -357,4 +344,3 @@ export default function App() {
     </div>
   );
 }
-
