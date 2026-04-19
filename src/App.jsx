@@ -39,6 +39,7 @@ export default function App() {
   const [mpLoading, setMpLoading] = useState(false);
   const [error, setError] = useState(null);
   const [poseDetected, setPoseDetected] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(0);
   const [facingMode, setFacingMode] = useState("user");
 
   useEffect(() => {
@@ -141,11 +142,12 @@ export default function App() {
       drawSkeleton(ctx, result.landmarks, w, h);
       const computed = getAngles(result.landmarks[0], exercise);
       setAngles(computed);
+      const lms = result.landmarks[0];
+      const visiblePoints = lms.filter(lm => lm.visibility > 0.5).length;
+      setVisibleCount(visiblePoints);
       const now = Date.now();
       if (now - lastAnalysis.current > ANALYSIS_INTERVAL && !loading) {
         lastAnalysis.current = now;
-        const lms = result.landmarks[0];
-        const visiblePoints = lms.filter(lm => lm.visibility > 0.5).length;
         const leftAnkleVisible = lms[27].visibility > 0.5;
         const rightAnkleVisible = lms[28].visibility > 0.5;
         const anklesVisible = leftAnkleVisible || rightAnkleVisible;
@@ -197,6 +199,7 @@ export default function App() {
     setCameraActive(false);
     setAngles({});
     setPoseDetected(false);
+    setVisibleCount(0);
   }, [analyzeWithClaude]);
 
   const flipCamera = useCallback(() => {
@@ -230,7 +233,7 @@ export default function App() {
         </div>
         {mpLoading && <span className="badge loading">Ładowanie AI…</span>}
         {mpReady && !cameraActive && <span className="badge ready">Gotowy</span>}
-        {cameraActive && <span className={`badge ${poseDetected ? "detected" : "searching"}`}>{poseDetected ? "✓ Sylwetka" : "Szukam…"}</span>}
+        {cameraActive && <span className={`badge ${poseDetected ? "detected" : "searching"}`}>{poseDetected ? `✓ ${visibleCount}/33` : "Szukam…"}</span>}
       </header>
 
       <main>
