@@ -1,7 +1,7 @@
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
-  const { imageBase64, exercise, angles } = req.body;
+  const { imageBase64, exercise, angles, mode } = req.body;
 
   const exerciseGuides = {
     squat: { name: "Przysiad", focus: "kolana (czy nie zapadają do środka), głębokość przysiadu, wyprostowanie pleców, pięty na podłodze", angleInfo: "kolano 70-100°, biodro 70-110°, tułów max 40°" },
@@ -14,13 +14,15 @@ export default async function handler(req, res) {
   const guide = exerciseGuides[exercise] || exerciseGuides.squat;
   const anglesText = angles ? Object.entries(angles).map(([k, v]) => `${k}: ${v}°`).join(", ") : "brak danych";
 
-  const prompt = `Jesteś precyzyjnym trenerem personalnym analizującym technikę ćwiczenia: ${guide.name}.
+  const isSummary = mode === "summary";
 
+  const prompt = isSummary
+    ? `Jesteś trenerem personalnym. Podaj JEDNO krótkie zdanie podsumowujące serię ćwiczenia ${guide.name} po polsku. Maksymalnie 15 słów. Przykłady: "Dobra technika, tak trzymaj!", "W następnej serii trzymaj stabilny korpus.", "Zejdź niżej w przysiadzie, świetna robota!". Tylko jedno zdanie, bez emoji.`
+    : `Jesteś precyzyjnym trenerem personalnym analizującym technikę ćwiczenia: ${guide.name}.
 ZMIERZONE KĄTY STAWÓW: ${anglesText}
 WARTOŚCI REFERENCYJNE: ${guide.angleInfo}
 SKUP SIĘ NA: ${guide.focus}
-
-Podaj 3-5 konkretnych wskazówek po polsku. Cytuj kąty gdy są nieprawidłowe. Używaj emoji. Format: lista punktów.`;
+Podaj JEDNO krótkie zdanie po polsku maksymalnie 10 słów jako wskazówkę głosową. Np: "Kolana szerzej, zejdź niżej." Tylko jedno zdanie, bez emoji.`;
 
   try {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -32,14 +34,16 @@ Podaj 3-5 konkretnych wskazówek po polsku. Cytuj kąty gdy są nieprawidłowe. 
       },
       body: JSON.stringify({
         model: "claude-opus-4-5",
-        max_tokens: 800,
+        max_tokens: 100,
         messages: [
           {
             role: "user",
-            content: [
-              { type: "image", source: { type: "base64", media_type: "image/jpeg", data: imageBase64 } },
-              { type: "text", text: prompt },
-            ],
+            content: isSummary
+              ? [{ type: "text", text: prompt }]
+              : [
+                  { type: "image", source: { type: "base64", media_type: "image/jpeg", data: imageBase64 } },
+                  { type: "text", text: prompt },
+                ],
           },
         ],
       }),
