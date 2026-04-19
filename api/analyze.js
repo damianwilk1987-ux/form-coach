@@ -2,7 +2,7 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
   const { imageBase64, exercise, angles, mode } = req.body;
-
+ 
   const exerciseGuides = {
     squat: { name: "Przysiad", focus: "kolana (czy nie zapadają do środka), głębokość przysiadu, wyprostowanie pleców, pięty na podłodze", angleInfo: "kolano 70-100°, biodro 70-110°, tułów max 40°" },
     pushup: { name: "Pompki", focus: "linia ciała (biodra nie opadają), kąt łokci, pozycja głowy", angleInfo: "łokieć ~90°, biodro 170-180°" },
