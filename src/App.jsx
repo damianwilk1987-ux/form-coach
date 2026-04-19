@@ -144,8 +144,12 @@ export default function App() {
       const now = Date.now();
       if (now - lastAnalysis.current > ANALYSIS_INTERVAL && !loading) {
         lastAnalysis.current = now;
-        const visiblePoints = result.landmarks[0].filter(lm => lm.visibility > 0.5).length;
-        if (visiblePoints < 25) {
+        const lms = result.landmarks[0];
+        const visiblePoints = lms.filter(lm => lm.visibility > 0.5).length;
+        const leftAnkleVisible = lms[27].visibility > 0.5;
+        const rightAnkleVisible = lms[28].visibility > 0.5;
+        const anklesVisible = leftAnkleVisible || rightAnkleVisible;
+        if (visiblePoints < 25 || !anklesVisible) {
           speak("Odejdź dalej od kamery, ustaw całe ciało w kadrze.");
         } else {
           const imageBase64 = canvas.toDataURL("image/jpeg", 0.8).split(",")[1];
