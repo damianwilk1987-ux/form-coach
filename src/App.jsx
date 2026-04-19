@@ -144,8 +144,13 @@ export default function App() {
       const now = Date.now();
       if (now - lastAnalysis.current > ANALYSIS_INTERVAL && !loading) {
         lastAnalysis.current = now;
-        const imageBase64 = canvas.toDataURL("image/jpeg", 0.8).split(",")[1];
-        analyzeWithClaude(imageBase64, computed, "live");
+        const visiblePoints = result.landmarks[0].filter(lm => lm.visibility > 0.5).length;
+        if (visiblePoints < 15) {
+          speak("Odejdź dalej od kamery, ustaw całe ciało w kadrze.");
+        } else {
+          const imageBase64 = canvas.toDataURL("image/jpeg", 0.8).split(",")[1];
+          analyzeWithClaude(imageBase64, computed, "live");
+        }
       }
     }
     rafRef.current = requestAnimationFrame(renderLoop);
@@ -177,7 +182,6 @@ export default function App() {
 
   const stopCamera = useCallback(async () => {
     cancelAnimationFrame(rafRef.current);
-    // Podsumowanie głosowe
     if (canvasRef.current) {
       const imageBase64 = canvasRef.current.toDataURL("image/jpeg", 0.8).split(",")[1];
       await analyzeWithClaude(imageBase64, {}, "summary");
