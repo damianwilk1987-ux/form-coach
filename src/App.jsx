@@ -145,7 +145,7 @@ export default function App() {
       if (now - lastAnalysis.current > ANALYSIS_INTERVAL && !loading) {
         lastAnalysis.current = now;
         const visiblePoints = result.landmarks[0].filter(lm => lm.visibility > 0.5).length;
-        if (visiblePoints < 15) {
+        if (visiblePoints < 25) {
           speak("Odejdź dalej od kamery, ustaw całe ciało w kadrze.");
         } else {
           const imageBase64 = canvas.toDataURL("image/jpeg", 0.8).split(",")[1];
