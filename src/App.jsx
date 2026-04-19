@@ -29,6 +29,7 @@ export default function App() {
   const detectorRef = useRef(null);
   const rafRef = useRef(null);
   const lastAnalysis = useRef(0);
+  const visibleCountRef = useRef(0);
 
   const [exercise, setExercise] = useState("squat");
   const [cameraActive, setCameraActive] = useState(false);
@@ -99,13 +100,13 @@ export default function App() {
     });
   }, []);
 
-  const analyzeWithClaude = useCallback(async (imageBase64, anglesData, mode = "live") => {
+  const analyzeWithClaude = useCallback(async (imageBase64, anglesData, mode = "live", vCount = 0) => {
     setLoading(true);
     try {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ imageBase64, exercise, angles: anglesData, mode, visiblePoints: visibleCount }),
+        body: JSON.stringify({ imageBase64, exercise, angles: anglesData, mode, visiblePoints: vCount }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -143,20 +144,14 @@ export default function App() {
       const computed = getAngles(result.landmarks[0], exercise);
       setAngles(computed);
       const lms = result.landmarks[0];
-      const visiblePoints = lms.filter(lm => lm.visibility > 0.5).length;
-      setVisibleCount(visiblePoints);
+      const vCount = lms.filter(lm => lm.visibility > 0.5).length;
+      setVisibleCount(vCount);
+      visibleCountRef.current = vCount;
       const now = Date.now();
       if (now - lastAnalysis.current > ANALYSIS_INTERVAL && !loading) {
         lastAnalysis.current = now;
-        const leftAnkleVisible = lms[27].visibility > 0.5;
-        const rightAnkleVisible = lms[28].visibility > 0.5;
-        const anklesVisible = leftAnkleVisible || rightAnkleVisible;
-        if (visiblePoints < 25 || !anklesVisible) {
-          speak("Odejdź dalej od kamery, ustaw całe ciało w kadrze.");
-        } else {
-          const imageBase64 = canvas.toDataURL("image/jpeg", 0.8).split(",")[1];
-          analyzeWithClaude(imageBase64, computed, "live");
-        }
+        const imageBase64 = canvas.toDataURL("image/jpeg", 0.8).split(",")[1];
+        analyzeWithClaude(imageBase64, computed, "live", vCount);
       }
     }
     rafRef.current = requestAnimationFrame(renderLoop);
@@ -190,7 +185,7 @@ export default function App() {
     cancelAnimationFrame(rafRef.current);
     if (canvasRef.current) {
       const imageBase64 = canvasRef.current.toDataURL("image/jpeg", 0.8).split(",")[1];
-      await analyzeWithClaude(imageBase64, {}, "summary");
+      await analyzeWithClaude(imageBase64, {}, "summary", 0);
     }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
