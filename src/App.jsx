@@ -105,7 +105,7 @@ export default function App() {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageBase64, exercise, angles: anglesData, mode }),
+      body: JSON.stringify({ imageBase64, exercise, angles: anglesData, mode, visiblePoints: visibleCount }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
