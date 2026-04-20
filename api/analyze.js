@@ -1,7 +1,7 @@
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
-  const { imageBase64, exercise, angles, mode, visiblePoints } = req.body;
+  const { imageBase64, exercise, angles, mode, visiblePoints, previousFeedback } = req.body;
 
   const exerciseGuides = {
     squat: { name: "Przysiad", focus: "kolana (czy nie zapadają do środka), głębokość przysiadu, wyprostowanie pleców, pięty na podłodze", angleInfo: "kolano 70-100°, biodro 70-110°, tułów max 40°" },
@@ -19,11 +19,14 @@ export default async function handler(req, res) {
     ? `Jesteś trenerem personalnym. Podaj JEDNO krótkie zdanie podsumowujące serię ćwiczenia ${guide.name} po polsku. Maksymalnie 15 słów. Przykłady: "Dobra technika, tak trzymaj!", "W następnej serii trzymaj stabilny korpus." Tylko jedno zdanie, bez emoji.`
     : `Jesteś trenerem personalnym analizującym ćwiczenie: ${guide.name}.
 
-Wykryto ${visiblePoints || 0} z 33 punktów ciała na obrazie.
+Wykryto ${visiblePoints || 0} z 33 punktów ciała.
 
-WAŻNE: Jeśli wykryto mniej niż 20 punktów, oznacza to że całe ciało nie jest widoczne. W takim przypadku powiedz TYLKO: "Odejdź od kamery, ustaw całe ciało w kadrze." i nic więcej.
+WAŻNE: Jeśli wykryto mniej niż 20 punktów, powiedz TYLKO: "Odejdź od kamery, ustaw całe ciało w kadrze." i nic więcej.
 
-Jeśli wykryto 20 lub więcej punktów, przeanalizuj technikę:
+${previousFeedback ? `POPRZEDNIA WSKAZÓWKA KTÓRĄ DAŁEŚ: "${previousFeedback}"
+Jeśli ćwiczący zastosował tę wskazówkę, pochwal go np. "Tak, świetnie, kolana już prawidłowo!" Jeśli nie zastosował, powtórz wskazówkę spokojnie.` : ""}
+
+Jeśli wykryto 20 lub więcej punktów:
 KĄTY STAWÓW: ${anglesText}
 WARTOŚCI REFERENCYJNE: ${guide.angleInfo}
 SKUP SIĘ NA: ${guide.focus}
