@@ -3,14 +3,15 @@ import { FilesetResolver, PoseLandmarker } from "@mediapipe/tasks-vision";
 import { getAngles, getAngleStatus, POSE_CONNECTIONS } from "./poseAnalyzer";
 
 const EXERCISES = [
-  { id: "squat",  label: "Przysiad",    icon: "🏋️" },
-  { id: "pushup", label: "Pompki",      icon: "💪" },
-  { id: "lunge",  label: "Wykroki",     icon: "🦵" },
-  { id: "plank",  label: "Deska",       icon: "🧱" },
-  { id: "pullup", label: "Podciąganie", icon: "🔝" },
+  { id: "squat",  label: "Przysiad",  icon: "🏋️" },
+  { id: "pushup", label: "Pompki",    icon: "💪" },
+  { id: "lunge",  label: "Wykroki",   icon: "🦵" },
+  { id: "plank",  label: "Deska",     icon: "🧱" },
+  { id: "bridge", label: "Mostek",    icon: "🌉" },
 ];
 
 const REP_OPTIONS = [8, 10, 12, 15];
+const PLANK_OPTIONS = [30, 45, 60, 90];
 const MIN_VISIBLE_POINTS = 20;
 
 const REP_THRESHOLDS = {
@@ -18,7 +19,7 @@ const REP_THRESHOLDS = {
   pushup: { down: 90,  up: 150, joint: "łokieć_lewy" },
   lunge:  { down: 100, up: 155, joint: "kolano_lewe" },
   plank:  { down: 0,   up: 0,   joint: null },
-  pullup: { down: 60,  up: 150, joint: "łokieć_lewy" },
+  bridge: { down: 150, up: 120, joint: "biodro_lewe" },
 };
 
 const ANGLE_NORMS = {
@@ -26,7 +27,7 @@ const ANGLE_NORMS = {
   pushup: { "łokieć_lewy": [75, 115], biodro_lewe: [160, 190] },
   lunge:  { kolano_lewe: [75, 105], kolano_prawe: [75, 105] },
   plank:  { biodro_lewe: [160, 190] },
-  pullup: { "łokieć_lewy": [25, 65] },
+  bridge: { biodro_lewe: [100, 170] },
 };
 
 function speak(text, volume = 1) {
@@ -57,10 +58,15 @@ export default function App() {
   const exerciseRef = useRef("squat");
   const volumeRef = useRef(1);
   const targetRepsRef = useRef(10);
+  const targetTimeRef = useRef(30);
   const announcedRepsRef = useRef(new Set());
+  const timerStartRef = useRef(null);
+  const timerIntervalRef = useRef(null);
+  const announcedSecondsRef = useRef(new Set());
 
   const [exercise, setExercise] = useState("squat");
   const [targetReps, setTargetReps] = useState(10);
+  const [targetTime, setTargetTime] = useState(30);
   const [cameraActive, setCameraActive] = useState(false);
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState(null);
@@ -70,15 +76,16 @@ export default function App() {
   const [mpLoading, setMpLoading] = useState(false);
   const [error, setError] = useState(null);
   const [poseDetected, setPoseDetected] = useState(false);
-  const [visibleCount, setVisibleCount] = useState(0);
   const [inFrame, setInFrame] = useState(false);
   const [repCount, setRepCount] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(0);
   const [volume, setVolume] = useState(1);
   const [sessionPhase, setSessionPhase] = useState("waiting");
 
   useEffect(() => { exerciseRef.current = exercise; }, [exercise]);
   useEffect(() => { volumeRef.current = volume; }, [volume]);
   useEffect(() => { targetRepsRef.current = targetReps; }, [targetReps]);
+  useEffect(() => { targetTimeRef.current = targetTime; }, [targetTime]);
 
   useEffect(() => {
     let cancelled = false;
@@ -192,6 +199,52 @@ export default function App() {
     }
   }, []);
 
+  const startPlankTimer = useCallback((canvas, vCount) => {
+    timerStartRef.current = Date.now();
+    announcedSecondsRef.current = new Set();
+    const target = targetTimeRef.current;
+    setTimeLeft(target);
+
+    timerIntervalRef.current = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - timerStartRef.current) / 1000);
+      const remaining = target - elapsed;
+      setTimeLeft(remaining);
+
+      // Ogłoszenia co 10 sekund
+      const announced = announcedSecondsRef.current;
+      if (elapsed > 0 && elapsed % 10 === 0 && !announced.has(elapsed)) {
+        announced.add(elapsed);
+        if (remaining > 0) {
+          speak(`${remaining} sekund`, volumeRef.current);
+        }
+      }
+
+      // Ostatnie 3 sekundy
+      if (remaining === 3 && !announced.has("3")) {
+        announced.add("3");
+        speak("Trzy", volumeRef.current);
+      } else if (remaining === 2 && !announced.has("2")) {
+        announced.add("2");
+        speak("Dwa", volumeRef.current);
+      } else if (remaining === 1 && !announced.has("1")) {
+        announced.add("1");
+        speak("Jeden", volumeRef.current);
+      }
+
+      if (remaining <= 0) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+        speak("Koniec deski!", volumeRef.current);
+        setTimeout(() => {
+          if (canvas) {
+            const imageBase64 = canvas.toDataURL("image/jpeg", 0.8).split(",")[1];
+            analyzeWithClaude(imageBase64, {}, "summary", vCount, null, target, null);
+          }
+        }, 2000);
+      }
+    }, 200);
+  }, [analyzeWithClaude]);
+
   const renderLoop = useCallback(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -223,12 +276,11 @@ export default function App() {
       setAngles(computed);
       const lms = result.landmarks[0];
       const vCount = lms.filter(lm => lm.visibility > 0.5).length;
-      setVisibleCount(vCount);
       const nowInFrame = vCount >= MIN_VISIBLE_POINTS;
       setInFrame(nowInFrame);
 
       if (nowInFrame && !wasInFrame.current) {
-        speak("Jesteś w kadrze, zacznij ćwiczyć.", volumeRef.current);
+        wasInFrame.current = true;
         repCountRef.current = 0;
         setRepCount(0);
         repPhase.current = "up";
@@ -236,10 +288,18 @@ export default function App() {
         sessionPhaseRef.current = "analyzing";
         setSessionPhase("analyzing");
         lastFeedbackTime.current = Date.now() + 3000;
-      }
-      wasInFrame.current = nowInFrame;
 
-      if (nowInFrame) {
+        if (exerciseRef.current === "plank") {
+          speak("Jesteś w kadrze, zacznij trzymać deskę.", volumeRef.current);
+          setTimeout(() => startPlankTimer(canvas, vCount), 1500);
+        } else {
+          speak("Jesteś w kadrze, zacznij ćwiczyć.", volumeRef.current);
+        }
+      }
+
+      if (!nowInFrame) wasInFrame.current = false;
+
+      if (nowInFrame && exerciseRef.current !== "plank") {
         const thresh = REP_THRESHOLDS[exerciseRef.current];
         if (thresh.joint && computed[thresh.joint] !== undefined) {
           const angle = computed[thresh.joint];
@@ -297,7 +357,7 @@ export default function App() {
     }
 
     rafRef.current = requestAnimationFrame(renderLoop);
-  }, [drawSkeleton, analyzeWithClaude, checkForErrors, announceRep]);
+  }, [drawSkeleton, analyzeWithClaude, checkForErrors, announceRep, startPlankTimer]);
 
   const startCamera = useCallback(async (facing) => {
     if (!mpReady) return;
@@ -312,6 +372,7 @@ export default function App() {
     announcedRepsRef.current = new Set();
     sessionPhaseRef.current = "waiting";
     setSessionPhase("waiting");
+    if (timerIntervalRef.current) { clearInterval(timerIntervalRef.current); timerIntervalRef.current = null; }
     if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -331,6 +392,7 @@ export default function App() {
 
   const stopCamera = useCallback(async () => {
     cancelAnimationFrame(rafRef.current);
+    if (timerIntervalRef.current) { clearInterval(timerIntervalRef.current); timerIntervalRef.current = null; }
     if (canvasRef.current && repCountRef.current > 0) {
       const imageBase64 = canvasRef.current.toDataURL("image/jpeg", 0.8).split(",")[1];
       await analyzeWithClaude(imageBase64, {}, "summary", 0, null, repCountRef.current, null);
@@ -342,9 +404,9 @@ export default function App() {
     setCameraActive(false);
     setAngles({});
     setPoseDetected(false);
-    setVisibleCount(0);
     setInFrame(false);
     setRepCount(0);
+    setTimeLeft(0);
     repCountRef.current = 0;
     wasInFrame.current = false;
     sessionPhaseRef.current = "waiting";
@@ -358,12 +420,14 @@ export default function App() {
   useEffect(() => {
     if (cameraActive) {
       cancelAnimationFrame(rafRef.current);
+      if (timerIntervalRef.current) { clearInterval(timerIntervalRef.current); timerIntervalRef.current = null; }
       setFeedback(null);
       setPreviousFeedback(null);
       previousFeedbackRef.current = null;
       wasInFrame.current = false;
       repCountRef.current = 0;
       setRepCount(0);
+      setTimeLeft(0);
       repPhase.current = "up";
       announcedRepsRef.current = new Set();
       sessionPhaseRef.current = "waiting";
@@ -372,9 +436,13 @@ export default function App() {
     }
   }, [exercise]);
 
-  useEffect(() => () => { cancelAnimationFrame(rafRef.current); }, []);
+  useEffect(() => () => {
+    cancelAnimationFrame(rafRef.current);
+    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+  }, []);
 
   const ex = EXERCISES.find((e) => e.id === exercise);
+  const isPlank = exercise === "plank";
 
   return (
     <div className="app">
@@ -390,7 +458,9 @@ export default function App() {
         {mpReady && !cameraActive && <span className="badge ready">Gotowy</span>}
         {cameraActive && (
           <span className={`badge ${inFrame ? "detected" : "searching"}`}>
-            {inFrame ? `${repCount}/${targetReps}` : poseDetected ? "Odejdź dalej" : "Szukam…"}
+            {inFrame
+              ? isPlank ? `${timeLeft}s` : `${repCount}/${targetReps}`
+              : poseDetected ? "Odejdź dalej" : "Szukam…"}
           </span>
         )}
       </header>
@@ -408,12 +478,18 @@ export default function App() {
 
         {!cameraActive && (
           <div className="reps-row">
-            <p className="reps-label">Liczba powtórzeń</p>
+            <p className="reps-label">{isPlank ? "Czas trzymania" : "Liczba powtórzeń"}</p>
             <div className="reps-options">
-              {REP_OPTIONS.map(r => (
-                <button key={r} className={`rep-btn ${targetReps === r ? "active" : ""}`}
-                  onClick={() => setTargetReps(r)}>{r}</button>
-              ))}
+              {isPlank
+                ? PLANK_OPTIONS.map(t => (
+                    <button key={t} className={`rep-btn ${targetTime === t ? "active" : ""}`}
+                      onClick={() => setTargetTime(t)}>{t}s</button>
+                  ))
+                : REP_OPTIONS.map(r => (
+                    <button key={r} className={`rep-btn ${targetReps === r ? "active" : ""}`}
+                      onClick={() => setTargetReps(r)}>{r}</button>
+                  ))
+              }
             </div>
           </div>
         )}
@@ -441,7 +517,9 @@ export default function App() {
             <div className="feedback-overlay">{feedback}</div>
           )}
           {cameraActive && inFrame && (
-            <div className="rep-counter">{repCount}/{targetReps}</div>
+            <div className="rep-counter">
+              {isPlank ? `${timeLeft}s` : `${repCount}/${targetReps}`}
+            </div>
           )}
         </div>
 
@@ -484,7 +562,7 @@ export default function App() {
 
         {feedback && !cameraActive && (
           <div className="feedback-box">
-            <div className="feedback-header">{ex.icon} <strong>Podsumowanie serii</strong></div>
+            <div className="feedback-header">{ex.icon} <strong>Podsumowanie</strong></div>
             <div className="feedback-body">
               <p className="feedback-line">{feedback}</p>
             </div>
@@ -498,7 +576,7 @@ export default function App() {
               <div className="tip">📐 Kamera z boku lub z przodu</div>
               <div className="tip">💡 Dobre oświetlenie</div>
               <div className="tip">🎯 Całe ciało w kadrze</div>
-              <div className="tip">🔊 Feedback po 2 i 4 powtórzeniu</div>
+              <div className="tip">🔊 Feedback głosowy na żywo</div>
             </div>
           </div>
         )}
