@@ -10,9 +10,10 @@ const EXERCISES = [
   { id: "pullup", label: "Podciąganie", icon: "🔝" },
 ];
 
+const REP_OPTIONS = [8, 10, 12, 15];
+
 const MIN_VISIBLE_POINTS = 20;
 
-// Progi dla licznika powtórzeń
 const REP_THRESHOLDS = {
   squat:  { down: 110, up: 150, joint: "kolano_lewe" },
   pushup: { down: 90,  up: 150, joint: "łokieć_lewy" },
@@ -21,9 +22,8 @@ const REP_THRESHOLDS = {
   pullup: { down: 60,  up: 150, joint: "łokieć_lewy" },
 };
 
-// Normy kątów dla detekcji błędów
 const ANGLE_NORMS = {
-  squat:  { kolano_lewe: [65, 115], kolano_prawe: [65, 115], biodro_lewe: [60, 120] },
+  squat:  { kolano_lewe: [55, 125], kolano_prawe: [55, 125], biodro_lewe: [50, 130] },
   pushup: { "łokieć_lewy": [75, 115], biodro_lewe: [160, 190] },
   lunge:  { kolano_lewe: [75, 105], kolano_prawe: [75, 105] },
   plank:  { biodro_lewe: [160, 190] },
@@ -48,11 +48,20 @@ export default function App() {
   const detectorRef = useRef(null);
   const rafRef = useRef(null);
   const wasInFrame = useRef(false);
-  const repPhase = useRef("up"); // "up" | "down"
+  const repPhase = useRef("up");
   const lastFeedbackTime = useRef(0);
   const lastErrorTime = useRef(0);
+  const repCountRef = useRef(0);
+  const loadingRef = useRef(false);
+  const previousFeedbackRef = useRef(null);
+  const sessionPhaseRef = useRef("waiting");
+  const exerciseRef = useRef("squat");
+  const volumeRef = useRef(1);
+  const targetRepsRef = useRef(10);
+  const announcedRepsRef = useRef(new Set());
 
   const [exercise, setExercise] = useState("squat");
+  const [targetReps, setTargetReps] = useState(10);
   const [cameraActive, setCameraActive] = useState(false);
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState(null);
@@ -66,17 +75,11 @@ export default function App() {
   const [inFrame, setInFrame] = useState(false);
   const [repCount, setRepCount] = useState(0);
   const [volume, setVolume] = useState(1);
-  const [sessionPhase, setSessionPhase] = useState("waiting"); // waiting | analyzing | monitoring
-
-  const repCountRef = useRef(0);
-  const loadingRef = useRef(false);
-  const previousFeedbackRef = useRef(null);
-  const sessionPhaseRef = useRef("waiting");
-  const exerciseRef = useRef("squat");
-  const volumeRef = useRef(1);
+  const [sessionPhase, setSessionPhase] = useState("waiting");
 
   useEffect(() => { exerciseRef.current = exercise; }, [exercise]);
   useEffect(() => { volumeRef.current = volume; }, [volume]);
+  useEffect(() => { targetRepsRef.current = targetReps; }, [targetReps]);
 
   useEffect(() => {
     let cancelled = false;
@@ -134,10 +137,7 @@ export default function App() {
       previousFeedbackRef.current = data.feedback;
       speak(data.feedback, volumeRef.current);
     } catch (e) {}
-    finally {
-      loadingRef.current = false;
-      setLoading(false);
-    }
+    finally { loadingRef.current = false; setLoading(false); }
   }, []);
 
   const drawSkeleton = useCallback((ctx, landmarks, w, h) => {
@@ -178,6 +178,21 @@ export default function App() {
     return false;
   }, []);
 
+  const announceRep = useCallback((rep, target) => {
+    if (announcedRepsRef.current.has(rep)) return;
+    announcedRepsRef.current.add(rep);
+    const remaining = target - rep;
+    if (rep % 2 === 0 && rep < target - 3) {
+      speak(`${rep}`, volumeRef.current);
+    } else if (remaining === 3) {
+      speak("Jeszcze trzy powtórzenia.", volumeRef.current);
+    } else if (remaining === 2) {
+      speak("Jeszcze dwa.", volumeRef.current);
+    } else if (remaining === 1) {
+      speak("Ostatnie powtórzenie!", volumeRef.current);
+    }
+  }, []);
+
   const renderLoop = useCallback(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -213,12 +228,12 @@ export default function App() {
       const nowInFrame = vCount >= MIN_VISIBLE_POINTS;
       setInFrame(nowInFrame);
 
-      // Wejście w kadr
       if (nowInFrame && !wasInFrame.current) {
         speak("Jesteś w kadrze, zaczynam analizę.", volumeRef.current);
         repCountRef.current = 0;
         setRepCount(0);
         repPhase.current = "up";
+        announcedRepsRef.current = new Set();
         sessionPhaseRef.current = "analyzing";
         setSessionPhase("analyzing");
         lastFeedbackTime.current = Date.now() + 3000;
@@ -226,7 +241,6 @@ export default function App() {
       wasInFrame.current = nowInFrame;
 
       if (nowInFrame) {
-        // Licznik powtórzeń
         const thresh = REP_THRESHOLDS[exerciseRef.current];
         if (thresh.joint && computed[thresh.joint] !== undefined) {
           const angle = computed[thresh.joint];
@@ -235,46 +249,52 @@ export default function App() {
           } else if (repPhase.current === "down" && angle > thresh.up) {
             repPhase.current = "up";
             repCountRef.current += 1;
-            setRepCount(repCountRef.current);
+            const newRep = repCountRef.current;
+            setRepCount(newRep);
+            const target = targetRepsRef.current;
+
+            // Odliczanie głosowe
+            announceRep(newRep, target);
+
+            const now = Date.now();
+
+            // Feedback po 2 powtórzeniach
+            if (newRep === 2 && sessionPhaseRef.current === "analyzing" && now - lastFeedbackTime.current > 2000) {
+              lastFeedbackTime.current = now;
+              sessionPhaseRef.current = "monitoring";
+              setSessionPhase("monitoring");
+              const imageBase64 = canvas.toDataURL("image/jpeg", 0.8).split(",")[1];
+              analyzeWithClaude(imageBase64, computed, "live", vCount, null, newRep, "early");
+            }
+
+            // Feedback po 4 powtórzeniach
+            else if (newRep === 4 && now - lastFeedbackTime.current > 2000) {
+              lastFeedbackTime.current = now;
+              const imageBase64 = canvas.toDataURL("image/jpeg", 0.8).split(",")[1];
+              analyzeWithClaude(imageBase64, computed, "live", vCount, previousFeedbackRef.current, newRep, "check");
+            }
+
+            // Koniec serii
+            else if (newRep >= target) {
+              lastFeedbackTime.current = now;
+              repCountRef.current = 0;
+              setRepCount(0);
+              announcedRepsRef.current = new Set();
+              sessionPhaseRef.current = "analyzing";
+              setSessionPhase("analyzing");
+              const imageBase64 = canvas.toDataURL("image/jpeg", 0.8).split(",")[1];
+              analyzeWithClaude(imageBase64, {}, "summary", vCount, null, target, null);
+            }
           }
         }
 
+        // Detekcja błędów po 4 powtórzeniach
         const now = Date.now();
-        const reps = repCountRef.current;
-
-        // Feedback po 2 powtórzeniach
-        if (reps === 2 && sessionPhaseRef.current === "analyzing" && now - lastFeedbackTime.current > 2000) {
-          lastFeedbackTime.current = now;
-          sessionPhaseRef.current = "monitoring";
-          setSessionPhase("monitoring");
-          const imageBase64 = canvas.toDataURL("image/jpeg", 0.8).split(",")[1];
-          analyzeWithClaude(imageBase64, computed, "live", vCount, null, reps, "early");
-        }
-
-        // Feedback po 4 powtórzeniach — ocena czy zastosowano wskazówki
-        else if (reps === 4 && sessionPhaseRef.current === "monitoring" && now - lastFeedbackTime.current > 2000) {
-          lastFeedbackTime.current = now;
-          const imageBase64 = canvas.toDataURL("image/jpeg", 0.8).split(",")[1];
-          analyzeWithClaude(imageBase64, computed, "live", vCount, previousFeedbackRef.current, reps, "check");
-        }
-
-        // Po 10 powtórzeniach — podsumowanie serii
-        else if (reps === 10 && now - lastFeedbackTime.current > 2000) {
-          lastFeedbackTime.current = now;
-          repCountRef.current = 0;
-          setRepCount(0);
-          sessionPhaseRef.current = "analyzing";
-          setSessionPhase("analyzing");
-          const imageBase64 = canvas.toDataURL("image/jpeg", 0.8).split(",")[1];
-          analyzeWithClaude(imageBase64, {}, "summary", vCount, null, 10, null);
-        }
-
-        // Detekcja błędów po 4 powtórzeniach — tylko gdy błąd i nie za często
-        else if (reps > 4 && now - lastErrorTime.current > 8000 && !loadingRef.current) {
+        if (repCountRef.current > 4 && now - lastErrorTime.current > 8000 && !loadingRef.current) {
           if (checkForErrors(computed)) {
             lastErrorTime.current = now;
             const imageBase64 = canvas.toDataURL("image/jpeg", 0.8).split(",")[1];
-            analyzeWithClaude(imageBase64, computed, "error", vCount, null, reps, null);
+            analyzeWithClaude(imageBase64, computed, "error", vCount, null, repCountRef.current, null);
           }
         }
       }
@@ -284,7 +304,7 @@ export default function App() {
     }
 
     rafRef.current = requestAnimationFrame(renderLoop);
-  }, [drawSkeleton, analyzeWithClaude, checkForErrors]);
+  }, [drawSkeleton, analyzeWithClaude, checkForErrors, announceRep]);
 
   const startCamera = useCallback(async (facing) => {
     if (!mpReady) return;
@@ -296,6 +316,7 @@ export default function App() {
     repCountRef.current = 0;
     setRepCount(0);
     repPhase.current = "up";
+    announcedRepsRef.current = new Set();
     sessionPhaseRef.current = "waiting";
     setSessionPhase("waiting");
     if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
@@ -338,8 +359,7 @@ export default function App() {
   }, [analyzeWithClaude]);
 
   const flipCamera = useCallback(() => {
-    const newFacing = "environment";
-    startCamera(newFacing);
+    startCamera("environment");
   }, [startCamera]);
 
   useEffect(() => {
@@ -352,6 +372,7 @@ export default function App() {
       repCountRef.current = 0;
       setRepCount(0);
       repPhase.current = "up";
+      announcedRepsRef.current = new Set();
       sessionPhaseRef.current = "waiting";
       setSessionPhase("waiting");
       rafRef.current = requestAnimationFrame(renderLoop);
@@ -376,7 +397,7 @@ export default function App() {
         {mpReady && !cameraActive && <span className="badge ready">Gotowy</span>}
         {cameraActive && (
           <span className={`badge ${inFrame ? "detected" : "searching"}`}>
-            {inFrame ? `${repCount} powt.` : poseDetected ? "Odejdź dalej" : "Szukam…"}
+            {inFrame ? `${repCount}/${targetReps}` : poseDetected ? "Odejdź dalej" : "Szukam…"}
           </span>
         )}
       </header>
@@ -391,6 +412,22 @@ export default function App() {
             </button>
           ))}
         </div>
+
+        {/* Wybór liczby powtórzeń */}
+        {!cameraActive && (
+          <div className="reps-row">
+            <p className="reps-label">Liczba powtórzeń</p>
+            <div className="reps-options">
+              {REP_OPTIONS.map(r => (
+                <button
+                  key={r}
+                  className={`rep-btn ${targetReps === r ? "active" : ""}`}
+                  onClick={() => setTargetReps(r)}
+                >{r}</button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="camera-wrap">
           <video ref={videoRef} autoPlay playsInline muted className="video-hidden" />
@@ -414,8 +451,8 @@ export default function App() {
           {feedback && cameraActive && (
             <div className="feedback-overlay">{feedback}</div>
           )}
-          {cameraActive && inFrame && repCount > 0 && (
-            <div className="rep-counter">{repCount}</div>
+          {cameraActive && inFrame && (
+            <div className="rep-counter">{repCount}/{targetReps}</div>
           )}
         </div>
 
@@ -500,6 +537,12 @@ export default function App() {
         .ex-btn:hover{border-color:var(--accent);color:var(--text)}
         .ex-btn.active{background:rgba(0,229,160,0.08);border-color:var(--accent);color:var(--accent);box-shadow:0 0 14px rgba(0,229,160,0.12);}
         .ex-icon{font-size:18px}.ex-name{font-size:9px;font-weight:500;text-align:center;line-height:1.2}
+        .reps-row{margin-bottom:14px}
+        .reps-label{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--dim);margin-bottom:8px}
+        .reps-options{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+        .rep-btn{padding:10px;background:var(--surf);border:1px solid var(--border);border-radius:10px;cursor:pointer;color:var(--dim);font-family:'Syne',sans-serif;font-size:16px;font-weight:800;transition:all 0.15s;}
+        .rep-btn:hover{border-color:var(--accent);color:var(--text)}
+        .rep-btn.active{background:rgba(0,229,160,0.08);border-color:var(--accent);color:var(--accent);box-shadow:0 0 14px rgba(0,229,160,0.12);}
         .camera-wrap{position:relative;background:var(--surf);border:1px solid var(--border);border-radius:14px;overflow:hidden;aspect-ratio:4/3;margin-bottom:12px;}
         .video-hidden{display:none}
         .main-canvas{width:100%;height:100%;object-fit:cover;display:block;opacity:0;transition:opacity 0.3s;}
