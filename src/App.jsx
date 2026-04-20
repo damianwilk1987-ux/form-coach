@@ -185,9 +185,9 @@ export default function App() {
       speak(`${half}`, volumeRef.current);
     } else if (rep === half + 2) {
       speak(`${half + 2}`, volumeRef.current);
+    } else if (rep === target - 2) {
+      speak(`${target - 2}`, volumeRef.current);
     } else if (rep === target - 1) {
-      speak(`${target - 1}`, volumeRef.current);
-    } else if (rep === target) {
       speak("Ostatnie powtórzenie!", volumeRef.current);
     }
   }, []);
@@ -228,7 +228,7 @@ export default function App() {
       setInFrame(nowInFrame);
 
       if (nowInFrame && !wasInFrame.current) {
-        speak("Jesteś w kadrze, zaczynam analizę.", volumeRef.current);
+        speak("Jesteś w kadrze, zacznij ćwiczyć.", volumeRef.current);
         repCountRef.current = 0;
         setRepCount(0);
         repPhase.current = "up";
@@ -274,7 +274,10 @@ export default function App() {
               sessionPhaseRef.current = "analyzing";
               setSessionPhase("analyzing");
               const imageBase64 = canvas.toDataURL("image/jpeg", 0.8).split(",")[1];
-              analyzeWithClaude(imageBase64, {}, "summary", vCount, null, target, null);
+              speak("Koniec serii!", volumeRef.current);
+              setTimeout(() => {
+                analyzeWithClaude(imageBase64, {}, "summary", vCount, null, target, null);
+              }, 2000);
             }
           }
         }
