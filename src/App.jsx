@@ -11,7 +11,6 @@ const EXERCISES = [
 ];
 
 const REP_OPTIONS = [8, 10, 12, 15];
-
 const MIN_VISIBLE_POINTS = 20;
 
 const REP_THRESHOLDS = {
@@ -181,14 +180,14 @@ export default function App() {
   const announceRep = useCallback((rep, target) => {
     if (announcedRepsRef.current.has(rep)) return;
     announcedRepsRef.current.add(rep);
-    const remaining = target - rep;
-    if (rep % 2 === 0 && rep < target - 3) {
-      speak(`${rep}`, volumeRef.current);
-    } else if (remaining === 3) {
-      speak("Jeszcze trzy powtórzenia.", volumeRef.current);
-    } else if (remaining === 2) {
-      speak("Jeszcze dwa.", volumeRef.current);
-    } else if (remaining === 1) {
+    const half = Math.floor(target / 2);
+    if (rep === half) {
+      speak(`${half}`, volumeRef.current);
+    } else if (rep === half + 2) {
+      speak(`${half + 2}`, volumeRef.current);
+    } else if (rep === target - 1) {
+      speak(`${target - 1}`, volumeRef.current);
+    } else if (rep === target) {
       speak("Ostatnie powtórzenie!", volumeRef.current);
     }
   }, []);
@@ -253,29 +252,21 @@ export default function App() {
             setRepCount(newRep);
             const target = targetRepsRef.current;
 
-            // Odliczanie głosowe
             announceRep(newRep, target);
 
             const now = Date.now();
 
-            // Feedback po 2 powtórzeniach
             if (newRep === 2 && sessionPhaseRef.current === "analyzing" && now - lastFeedbackTime.current > 2000) {
               lastFeedbackTime.current = now;
               sessionPhaseRef.current = "monitoring";
               setSessionPhase("monitoring");
               const imageBase64 = canvas.toDataURL("image/jpeg", 0.8).split(",")[1];
               analyzeWithClaude(imageBase64, computed, "live", vCount, null, newRep, "early");
-            }
-
-            // Feedback po 4 powtórzeniach
-            else if (newRep === 4 && now - lastFeedbackTime.current > 2000) {
+            } else if (newRep === 4 && now - lastFeedbackTime.current > 2000) {
               lastFeedbackTime.current = now;
               const imageBase64 = canvas.toDataURL("image/jpeg", 0.8).split(",")[1];
               analyzeWithClaude(imageBase64, computed, "live", vCount, previousFeedbackRef.current, newRep, "check");
-            }
-
-            // Koniec serii
-            else if (newRep >= target) {
+            } else if (newRep >= target) {
               lastFeedbackTime.current = now;
               repCountRef.current = 0;
               setRepCount(0);
@@ -288,7 +279,6 @@ export default function App() {
           }
         }
 
-        // Detekcja błędów po 4 powtórzeniach
         const now = Date.now();
         if (repCountRef.current > 4 && now - lastErrorTime.current > 8000 && !loadingRef.current) {
           if (checkForErrors(computed)) {
@@ -413,17 +403,13 @@ export default function App() {
           ))}
         </div>
 
-        {/* Wybór liczby powtórzeń */}
         {!cameraActive && (
           <div className="reps-row">
             <p className="reps-label">Liczba powtórzeń</p>
             <div className="reps-options">
               {REP_OPTIONS.map(r => (
-                <button
-                  key={r}
-                  className={`rep-btn ${targetReps === r ? "active" : ""}`}
-                  onClick={() => setTargetReps(r)}
-                >{r}</button>
+                <button key={r} className={`rep-btn ${targetReps === r ? "active" : ""}`}
+                  onClick={() => setTargetReps(r)}>{r}</button>
               ))}
             </div>
           </div>
@@ -509,7 +495,7 @@ export default function App() {
               <div className="tip">📐 Kamera z boku lub z przodu</div>
               <div className="tip">💡 Dobre oświetlenie</div>
               <div className="tip">🎯 Całe ciało w kadrze</div>
-              <div className="tip">🔊 Feedback co 2 powtórzenia</div>
+              <div className="tip">🔊 Feedback po 2 i 4 powtórzeniu</div>
             </div>
           </div>
         )}
