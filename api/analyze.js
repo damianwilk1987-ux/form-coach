@@ -1,7 +1,7 @@
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
-  const { imageBase64, exercise, angles, mode, visiblePoints, previousFeedback } = req.body;
+  const { imageBase64, exercise, angles, mode, visiblePoints, previousFeedback, repCount, phase } = req.body;
 
   const exerciseGuides = {
     squat: { name: "Przysiad", focus: "kolana (czy nie zapadają do środka), głębokość przysiadu, wyprostowanie pleców, pięty na podłodze", angleInfo: "kolano 70-100°, biodro 70-110°, tułów max 40°" },
@@ -14,24 +14,32 @@ export default async function handler(req, res) {
   const guide = exerciseGuides[exercise] || exerciseGuides.squat;
   const anglesText = angles ? Object.entries(angles).map(([k, v]) => `${k}: ${v}°`).join(", ") : "brak danych";
   const isSummary = mode === "summary";
+  const isError = mode === "error";
 
-  const prompt = isSummary
-    ? `Jesteś trenerem personalnym. Podaj JEDNO krótkie zdanie podsumowujące serię ćwiczenia ${guide.name} po polsku. Maksymalnie 15 słów. Przykłady: "Dobra technika, tak trzymaj!", "W następnej serii trzymaj stabilny korpus." Tylko jedno zdanie, bez emoji.`
-    : `Jesteś trenerem personalnym analizującym ćwiczenie: ${guide.name}.
+  let prompt;
 
-Wykryto ${visiblePoints || 0} z 33 punktów ciała.
-
-WAŻNE: Jeśli wykryto mniej niż 20 punktów, powiedz TYLKO: "Odejdź od kamery, ustaw całe ciało w kadrze." i nic więcej.
-
-${previousFeedback ? `POPRZEDNIA WSKAZÓWKA KTÓRĄ DAŁEŚ: "${previousFeedback}"
-Jeśli ćwiczący zastosował tę wskazówkę, pochwal go np. "Tak, świetnie, kolana już prawidłowo!" Jeśli nie zastosował, powtórz wskazówkę spokojnie.` : ""}
-
-Jeśli wykryto 20 lub więcej punktów:
+  if (isSummary) {
+    prompt = `Jesteś trenerem personalnym. Podsumuj serię ${repCount || ""} powtórzeń ćwiczenia ${guide.name} po polsku. Maksymalnie 15 słów. Przykłady: "Dobra seria, ${repCount} powtórzeń z dobrą techniką!", "Następnym razem zejdź głębiej w przysiadzie." Tylko jedno zdanie, bez emoji.`;
+  } else if (isError) {
+    prompt = `Jesteś trenerem personalnym. Wykryto błąd techniczny podczas ćwiczenia ${guide.name}.
+KĄTY: ${anglesText}
+NORMY: ${guide.angleInfo}
+Powiedz JEDNO krótkie zdanie po polsku max 8 słów wskazując konkretny błąd. Np: "Kolano opada do środka, popraw ustawienie." Bez emoji.`;
+  } else if (phase === "early") {
+    prompt = `Jesteś trenerem personalnym oceniającym pierwsze ${repCount} powtórzenia ćwiczenia ${guide.name}.
 KĄTY STAWÓW: ${anglesText}
-WARTOŚCI REFERENCYJNE: ${guide.angleInfo}
+NORMY: ${guide.angleInfo}
 SKUP SIĘ NA: ${guide.focus}
-
-Podaj JEDNO krótkie zdanie po polsku, maksymalnie 10 słów. Tylko jedno zdanie, bez emoji.`;
+Podaj szczegółowy feedback po polsku — oceń każdy aspekt techniki. Maksymalnie 2 zdania, łącznie max 20 słów. Np: "Kolana do zewnątrz, plecy prawidłowo. Zejdź głębiej w przysiadzie." Bez emoji.`;
+  } else if (phase === "check") {
+    prompt = `Jesteś trenerem personalnym. Ćwiczący wykonał już ${repCount} powtórzeń ${guide.name}.
+POPRZEDNIA WSKAZÓWKA: "${previousFeedback}"
+AKTUALNE KĄTY: ${anglesText}
+NORMY: ${guide.angleInfo}
+Oceń czy zastosował poprzednią wskazówkę. Jedno zdanie max 10 słów. Np: "Świetnie, kolana już prawidłowo ustawione!" lub "Nadal schodzisz za płytko, zegnij bardziej." Bez emoji.`;
+  } else {
+    prompt = `Wykryto ${visiblePoints || 0} z 33 punktów ciała. Jeśli mniej niż 20 powiedz tylko: "Odejdź od kamery, ustaw całe ciało w kadrze." Bez emoji. Jedno zdanie.`;
+  }
 
   try {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -43,11 +51,11 @@ Podaj JEDNO krótkie zdanie po polsku, maksymalnie 10 słów. Tylko jedno zdanie
       },
       body: JSON.stringify({
         model: "claude-opus-4-5",
-        max_tokens: 100,
+        max_tokens: 150,
         messages: [
           {
             role: "user",
-            content: isSummary
+            content: (isSummary || isError || phase === "check")
               ? [{ type: "text", text: prompt }]
               : [
                   { type: "image", source: { type: "base64", media_type: "image/jpeg", data: imageBase64 } },
